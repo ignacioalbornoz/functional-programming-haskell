@@ -1,0 +1,287 @@
+#lang play
+
+(print-only-errors #t)
+
+(require "env.rkt")
+
+;; global log
+;;(define log (box '()))
+
+;; global parameter
+(define myprint (make-parameter println))
+
+
+
+#|
+<CL> ::= <num>
+         | {+ <CL> <CL>}
+         | {if0 <CL> <CL> <CL>}
+         | {with {<sym> <CL>} <CL>}
+         | <id>
+         | {<CL> <CL>}
+         | {fun {<sym>} <CL>}
+         | {printn <CL>}
+         | {mfun {<id>} <CL>} 
+|#
+(deftype CL
+  (num n)
+  (add l r)
+  (if0 c t f)
+  (fun id body)
+  (id s)
+  (app fun-expr arg-expr)
+  (printn e)
+  (mfun id body)
+  )
+
+
+;; parse :: s-expr -> CL
+(define (parse-cl s-expr)
+  (match s-expr
+    [(? number?) (num s-expr)]
+    [(? symbol?) (id s-expr)]
+    [(list '+ l r) (add (parse-cl l) (parse-cl r))]
+    [(list 'if0 c t f) (if0 (parse-cl c)
+                            (parse-cl t)
+                            (parse-cl f))]
+    [(list 'with (list x e) b)
+     (cond 
+     [(equal? 'fun (car e)) (app (fun x (parse-cl b)) (parse-cl e))]
+     [(equal? 'mfun (car e)) (app (mfun x (parse-cl b)) (parse-cl e))]
+                              )]
+    [(list 'fun (list x) b) (fun x (parse-cl b))]
+    [(list 'mfun (list x) b) (mfun x (parse-cl b))]
+    [(list 'printn e) (printn (parse-cl e))]
+    [(list f a) (app (parse-cl f) (parse-cl a))]))
+
+;; values
+(deftype Val
+  (numV n)
+  (closV id body env)
+  (mclosV id body env hsh)
+  )
+
+#|
+<Result> ::= {result <CL> <log>}
+|#
+;; estructura de datos que guarda y mantiene un registro global de impresiones o logs
+(deftype Result 
+    (result val log))
+
+
+;; println-g :: num -> _
+(define (println-g num)
+  (set-box! log (cons num (unbox log)))
+  )
+
+
+
+
+;; interp :: Expr Env -> Val
+(define (interp expr env)
+  (match expr
+    [(num n) (numV n)]
+    [(fun id body) (closV id body env)]
+    [(mfun id body) (define hashtable (make-hash)) (mclosV id body env hashtable)]
+    [(add l r) (num+ (interp l env) (interp r env))]
+    [(if0 c t f)
+     (if (num-zero? (interp c env))
+         (interp t env)
+         (interp f env))]
+    [(id x) (env-lookup x env)]
+    [(printn e) 
+      (def (numV n) (interp e env))
+      ((myprint) n)
+      ;;(println-g n) ;; ESTO ES PARA EL PRIMER INTENTO
+      (numV n)]
+    [(app fun-expr arg-expr)
+
+     (match (interp fun-expr env)
+       
+       [(closV id body fenv)(interp body
+                (extend-env id
+                            (interp arg-expr env)
+                            fenv))]
+       [(mclosV id body fenv hsh)
+        (define arginterp (interp arg-expr env))
+                (match arginterp
+                  [(numV n) (cond
+                             [(hash-has-key? hsh (append (list fun-expr) n)) (hash-ref hsh (append (list fun-expr) n))]
+                             [else (hash-set! hsh (append (list fun-expr) n) (interp body (extend-env id arginterp fenv)))
+                                   (hash-ref hsh (append (list fun-expr) n))]
+                                        )
+                           ]
+               [else (interp body
+                (extend-env id
+                            (interp arg-expr env)
+                            fenv))]
+
+                  
+                  )
+
+
+
+               ])
+
+
+        ])
+    )
+
+(define (num+ n1 n2)
+  (numV (+ (numV-n n1) (numV-n n2))))
+ 
+(define (num-zero? n)
+  (zero? (numV-n n)))
+ 
+;; interp-top :: CL -> number
+;; interpreta una expresión y retorna el valor final
+(define (interp-top expr)
+  (match (interp expr empty-env)
+    [(numV n) n]
+    [_ 'procedure]))
+    
+;; run-cl :: s-expr -> number
+(define (run-cl prog)
+  (interp-top (parse-cl prog)))
+
+;; tests
+(test (run-cl '{with {addn {fun {n}
+                          {fun {m}
+                            {+ n m}}}}
+                 {{addn 10} 4}})
+      14)
+
+
+
+;; interp-g :: Expr -> <Result>
+(define (interp-g expr)
+  (set-box! log '())
+  (match (interp expr empty-env)
+    [(numV n) (result n log)]
+    [_ 'procedure])
+  )
+
+;; interp-p :: Expr -> <Result>
+(define (interp-p expr)
+  (define locallog (box '()))
+  (parameterize ([myprint   (lambda (x) (set-box! locallog (cons x (unbox locallog)))) ])
+    
+  (match (interp expr empty-env)
+    [(numV n) (result n locallog)]
+    [_ 'procedure])
+  ))
+
+
+;; TEST PRIMER INTENTO ;; recordar quitar los punto y coma del interprete para probar esta parte
+;; tests interp-g print output
+
+#|
+(test (unbox (result-log (interp-g (parse-cl '{+ 1 {printn {+ 1 2}}}))))
+      (list 3)
+      )
+
+(test (unbox (result-log (interp-g (parse-cl '(printn {+ 1 {printn {+ 1 2}}})))))
+      (list 4 3)
+      )
+
+(test (unbox (result-log (interp-g (parse-cl '(printn (if0 (printn {+ 1 {printn {+ 1 2}}}) (printn 14) (printn (+ 12 (printn 21))))))
+                                             )))
+      (list 33 33 21 4 3)
+      )
+
+
+(test (unbox (result-log (interp-g (parse-cl  '{with {addn {fun {n}
+                          {fun {m}
+                            {+ n m}}}}
+                 {{addn 10} 4}}))))
+      (list))
+
+(test (unbox (result-log (interp-g (parse-cl  '{with {addn {fun {n}
+                          {fun {m}
+                            {+ n m}}}}
+                 {printn {{addn 10} (printn 4)}}}))))
+      (list 14 4))
+
+
+;;(interp-g (parse-cl '{+ 1 {printn {+ 1 2}}}))
+
+
+;; TEST SEGUNDO INTENTO 
+;; tests interp-p print output
+
+(test (unbox (result-log (interp-p (parse-cl '{+ 1 {printn {+ 1 2}}}))))
+      (list 3)
+      )
+
+(test (unbox (result-log (interp-p (parse-cl '(printn {+ 1 {printn {+ 1 2}}})))))
+      (list 4 3)
+      )
+
+(test (unbox (result-log (interp-p (parse-cl '(printn (if0 (printn {+ 1 {printn {+ 1 2}}}) (printn 14) (printn (+ 12 (printn 21))))))
+                                             )))
+      (list 33 33 21 4 3)
+      )
+
+
+(test (unbox (result-log (interp-p (parse-cl  '{with {addn {fun {n}
+                          {fun {m}
+                            {+ n m}}}}
+                 {{addn 10} 4}}))))
+      (list))
+
+(test (unbox (result-log (interp-p (parse-cl  '{with {addn {fun {n}
+                          {fun {m}
+                            {+ n m}}}}
+                 {printn {{addn 10} (printn 4)}}}))))
+      (list 14 4))
+;;(interp-p (parse-cl '{+ 1 {printn {+ 1 2}}}))
+;;(interp-p (parse-cl '(printn (if0 (printn {+ 1 {printn {+ 1 2}}}) (printn 14) (printn (+ 12 (printn 21)))))))
+
+|#
+
+;; TEST P2
+
+(interp (parse-cl'{with {doble {mfun {d} d}} {+ {doble {printn 3}} {doble {printn 3}}}})  empty-env)
+
+
+
+(interp (parse-cl '{with {doble {mfun {d} {printn d}}}{+ {doble 3} {doble 3}}})  empty-env)
+
+
+(interp (parse-cl '{with {addn {mfun {n} {mfun {m} {+ {printn n} m}}}} {+ {{addn 10} 4} {{addn 10} 4}}})  empty-env)
+
+(interp (parse-cl  '{with {addn {fun {n}
+                          {fun {m}
+                            {+ n m}}}}
+                 {{addn 10} 4}}) empty-env)
+
+(interp (parse-cl  '{with {addn {mfun {n}
+                          {mfun {m}
+                            {+ n m}}}}
+                 {{addn 10} 4}}) empty-env)
+
+
+
+(interp (parse-cl  '{with {add1 
+                          {fun {m}
+                            {+ 1 m}}}
+                 {add1 (+ {add1 10} -1) }}) empty-env)
+
+(interp (parse-cl  '{with {add1 
+                          {mfun {m}
+                            {+ 1 m}}}
+                 {add1 (+ {add1 10} -1) }}) empty-env)
+
+
+(test (unbox (result-log (interp-p (parse-cl  '{with {addn {mfun {n}
+                          {mfun {m}
+                            {+ n m}}}}
+                 {{addn 10} 4}}))))
+      (list))
+
+(test (unbox (result-log (interp-p (parse-cl  '{with {addn {mfun {n}
+                          {mfun {m}
+                            {+ n m}}}}
+                 {printn {{addn 10} (printn 4)}}}))))
+      (list 14 4))
+
