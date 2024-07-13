@@ -4,18 +4,6 @@
 ## Introducción
 Este proyecto contiene materiales y ejercicios de programación funcional en el lenguaje Racket, organizados por trimestres. El objetivo es ayudar a los estudiantes a aprender y practicar conceptos clave de la programación funcional.
 
-## Estructura del Proyecto
-El repositorio está organizado en varias carpetas:
-
-- **T1/**: Materiales y ejercicios del primer trimestre.
-- **T2-2023/**: Materiales y ejercicios del segundo trimestre de 2023.
-- **T3/**: Materiales y ejercicios del tercer trimestre.
-
-### Archivos Principales
-- **.gitignore**: Lista de archivos y directorios que Git debe ignorar.
-- **LICENSE**: Licencia del proyecto bajo AGPL-3.0.
-- **README.md**: Este archivo.
-
 ## Instalación
 Para ejecutar los ejemplos y ejercicios de este repositorio, sigue estos pasos:
 
@@ -78,24 +66,3 @@ Contiene proyectos y ejercicios finales integradores de programación funcional.
       [(pred (car lst)) (cons (car lst) (filtrar pred (cdr lst)))]
       [else (filtrar pred (cdr lst))]))
   ```
-
-## Contribución
-Si deseas contribuir a este proyecto, sigue estos pasos:
-
-1. Haz un fork del repositorio.
-2. Crea una rama para tu contribución:
-   ```bash
-   git checkout -b mi-nueva-rama
-   ```
-3. Realiza tus cambios y commitea:
-   ```bash
-   git commit -am 'Agrega nueva funcionalidad'
-   ```
-4. Envía tus cambios al repositorio original:
-   ```bash
-   git push origin mi-nueva-rama
-   ```
-5. Crea un Pull Request.
-
-## Licencia
-Este proyecto está licenciado bajo la AGPL-3.0. Para más detalles, consulta el archivo [LICENSE](LICENSE).
